@@ -2,11 +2,10 @@ package incomingportal
 
 import (
 	"context"
-	"fmt"
-	"io/ioutil"
 
 	tesseractv1alpha1 "github.com/dirty49374/tesseract-operator/pkg/apis/tesseract/v1alpha1"
 	"github.com/dirty49374/tesseract-operator/pkg/certs"
+	"github.com/dirty49374/tesseract-operator/pkg/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,22 +31,17 @@ var log = logf.Log.WithName("controller_incomingportal")
 // Add creates a new IncomingPortal Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
-	certs, err := certs.LoadCerts(".")
+	certs, err := certs.LoadCerts("secret")
 	if err != nil {
 		return err
 	}
 
-	envoyConfig, err := ioutil.ReadFile("incoming-envoy.tpl")
-	if err != nil {
-		return err
-	}
-
-	return add(mgr, newReconciler(mgr, certs, string(envoyConfig)))
+	return add(mgr, newReconciler(mgr, certs))
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, certs *certs.Certs, envoyConfig string) reconcile.Reconciler {
-	return &ReconcileIncomingPortal{client: mgr.GetClient(), scheme: mgr.GetScheme(), certs: certs, envoyConfig: envoyConfig, portals: make(map[string][]int32)}
+func newReconciler(mgr manager.Manager, certs *certs.Certs) reconcile.Reconciler {
+	return &ReconcileIncomingPortal{client: mgr.GetClient(), scheme: mgr.GetScheme(), certs: certs, portals: make(map[string][]int32)}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -83,11 +77,10 @@ var _ reconcile.Reconciler = &ReconcileIncomingPortal{}
 type ReconcileIncomingPortal struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client      client.Client
-	scheme      *runtime.Scheme
-	certs       *certs.Certs
-	envoyConfig string
-	portals     map[string][]int32
+	client  client.Client
+	scheme  *runtime.Scheme
+	certs   *certs.Certs
+	portals map[string][]int32
 }
 
 // Reconcile reads that state of the cluster for a IncomingPortal object and makes changes based on the state read
@@ -107,58 +100,52 @@ func (r *ReconcileIncomingPortal) Reconcile(request reconcile.Request) (reconcil
 	instance := &tesseractv1alpha1.IncomingPortal{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			delete(r.portals, addr)
-
-			configMap := r.newConfigMapForCR()
-			err = r.client.Update(context.TODO(), configMap)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
-
-			return reconcile.Result{}, nil
+		if !errors.IsNotFound(err) {
+			return reconcile.Result{}, err
 		}
-		// Error reading the object - requeue the request.
-		return reconcile.Result{}, err
+
+		// Request object not found, could have been deleted after reconcile request.
+		delete(r.portals, addr)
+	} else {
+		r.portals[addr] = instance.Spec.LocalPorts
+		if r.portals[addr] == nil {
+			r.portals[addr] = make([]int32, 0)
+		}
 	}
 
-	r.portals[addr] = instance.Spec.LocalPorts
-	if r.portals[addr] == nil {
-		r.portals[addr] = make([]int32, 0)
-	}
-	configMap := r.newConfigMapForCR()
-	fmt.Println(configMap)
-	err = r.client.Update(context.TODO(), configMap)
+	configMap, err := r.newConfigMapForCR()
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// // Define a new Pod object
-	// pod := newPodForCR(instance)
+	err = r.client.Update(context.TODO(), configMap)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			err = r.client.Create(context.TODO(), configMap)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else {
+			return reconcile.Result{}, err
+		}
+	}
+	hash, err := util.JsonShaObject(configMap)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 
-	// // Set IncomingPortal instance as the owner and controller
-	// if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-	// 	return reconcile.Result{}, err
-	// }
+	deployment := newDeployment(hash)
+	err = r.client.Update(context.TODO(), deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			err = r.client.Create(context.TODO(), deployment)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else {
+			return reconcile.Result{}, err
+		}
+	}
 
-	// // Check if this Pod already exists
-	// found := &corev1.Pod{}
-	// err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	// if err != nil && errors.IsNotFound(err) {
-	// 	reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-	// 	err = r.client.Create(context.TODO(), pod)
-	// 	if err != nil {
-	// 		return reconcile.Result{}, err
-	// 	}
-
-	// 	// Pod created successfully - don't requeue
-	// 	return reconcile.Result{}, nil
-	// } else if err != nil {
-	// 	return reconcile.Result{}, err
-	// }
-
-	// Pod already exists - don't requeue
-	// reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
 	return reconcile.Result{}, nil
 }

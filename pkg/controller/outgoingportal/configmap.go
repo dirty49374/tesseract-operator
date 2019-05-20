@@ -3,17 +3,16 @@ package outgoingportal
 import (
 	"bytes"
 	"fmt"
-	"text/template"
 
 	tesseractv1alpha1 "github.com/dirty49374/tesseract-operator/pkg/apis/tesseract/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (r *ReconcileOutgoingPortal) newConfigMapForCR(cr *tesseractv1alpha1.OutgoingPortal) *corev1.ConfigMap {
+func (r *ReconcileOutgoingPortal) newConfigMapForCR(cr *tesseractv1alpha1.OutgoingPortal) (*corev1.ConfigMap, error) {
 
 	if cr == nil {
-		return nil
+		return nil, nil
 	}
 
 	if cr.Spec.RemotePorts == nil {
@@ -22,20 +21,13 @@ func (r *ReconcileOutgoingPortal) newConfigMapForCR(cr *tesseractv1alpha1.Outgoi
 
 	var buf bytes.Buffer
 
-	fmt.Println("XXXXXXX")
-	fmt.Println(cr)
-	template := template.Must(template.New("envoyConfig").Parse(r.envoyConfig))
-	err := template.Execute(&buf, cr)
+	err := outgoingPortalEnvoyConfig.Execute(&buf, cr)
 	if err != nil {
-		fmt.Println("==================================================================")
 		fmt.Println(err)
-		fmt.Println("==================================================================")
-		return nil
+		return nil, err
 	}
-	fmt.Println("==================================================================")
-	fmt.Println(buf.String())
-	fmt.Println("==================================================================")
 
+	yaml := buf.String()
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-portal",
@@ -46,7 +38,7 @@ func (r *ReconcileOutgoingPortal) newConfigMapForCR(cr *tesseractv1alpha1.Outgoi
 			},
 		},
 		Data: map[string]string{
-			"envoy.yaml": buf.String(),
+			"envoy.yaml": yaml,
 		},
-	}
+	}, nil
 }

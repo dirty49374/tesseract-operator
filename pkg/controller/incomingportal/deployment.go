@@ -1,40 +1,32 @@
-package outgoingportal
+package incomingportal
 
 import (
-	tesseractv1alpha1 "github.com/dirty49374/tesseract-operator/pkg/apis/tesseract/v1alpha1"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// newDeploymentForCR returns a busybox pod with the same name/namespace as the cr
-func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *appsv1.Deployment {
-	var replicas int32 = 1
+func newDeployment(hash string) *appsv1.Deployment {
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-portal",
-			Namespace: cr.Namespace,
+			Name:      "tesseract",
+			Namespace: tesseractNamespace,
 			Labels: map[string]string{
-				"app":      cr.Name + "-portal",
-				"heritage": "tesseract",
-			},
-			Annotations: map[string]string{
-				"config": hash,
+				"app": "tesseract",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
+			Replicas: &tesseractReplicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": cr.Name + "-portal",
+					"app": "tesseract",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app": cr.Name + "-portal",
+						"app": "tesseract",
 					},
 					Annotations: map[string]string{
 						"config": hash,
@@ -43,16 +35,12 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "busybox",
+							Name:  "envoy",
 							Image: "envoyproxy/envoy:v1.10.0",
 							Ports: []corev1.ContainerPort{
 								{
-									Name:          "proxy",
-									ContainerPort: 80,
-								},
-								{
-									Name:          "admin",
-									ContainerPort: 8001,
+									Name:          "tesseract",
+									ContainerPort: 14443,
 								},
 							},
 							Command: []string{
@@ -78,7 +66,7 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: cr.Name + "-portal",
+										Name: "tesseract",
 									},
 								},
 							},
@@ -87,7 +75,7 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 							Name: "secret",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: cr.Name + "-portal",
+									SecretName: "tesseract",
 								},
 							},
 						},

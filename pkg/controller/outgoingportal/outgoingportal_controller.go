@@ -2,11 +2,11 @@ package outgoingportal
 
 import (
 	"context"
-	"io/ioutil"
 
 	tesseractv1alpha1 "github.com/dirty49374/tesseract-operator/pkg/apis/tesseract/v1alpha1"
 
 	"github.com/dirty49374/tesseract-operator/pkg/certs"
+	"github.com/dirty49374/tesseract-operator/pkg/util"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,22 +34,17 @@ var log = logf.Log.WithName("controller_outgoingportal")
 // Add creates a new OutgoingPortal Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
-	certs, err := certs.LoadCerts(".")
+	certs, err := certs.LoadCerts("secret")
 	if err != nil {
 		return err
 	}
 
-	envoyConfig, err := ioutil.ReadFile("outgoing-envoy.tpl")
-	if err != nil {
-		return err
-	}
-
-	return add(mgr, newReconciler(mgr, certs, string(envoyConfig)))
+	return add(mgr, newReconciler(mgr, certs))
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, certs *certs.Certs, envoyConfig string) reconcile.Reconciler {
-	return &ReconcileOutgoingPortal{client: mgr.GetClient(), scheme: mgr.GetScheme(), certs: certs, envoyConfig: envoyConfig}
+func newReconciler(mgr manager.Manager, certs *certs.Certs) reconcile.Reconciler {
+	return &ReconcileOutgoingPortal{client: mgr.GetClient(), scheme: mgr.GetScheme(), certs: certs}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -95,10 +90,9 @@ var _ reconcile.Reconciler = &ReconcileOutgoingPortal{}
 type ReconcileOutgoingPortal struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client      client.Client
-	scheme      *runtime.Scheme
-	certs       *certs.Certs
-	envoyConfig string
+	client client.Client
+	scheme *runtime.Scheme
+	certs  *certs.Certs
 }
 
 // Reconcile reads that state of the cluster for a OutgoingPortal object and makes changes based on the state read
@@ -126,51 +120,69 @@ func (r *ReconcileOutgoingPortal) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
-	if r.reconcileConfigMap(instance, reqLogger) != nil {
+	hash, err := r.reconcileConfigMap(instance, reqLogger)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	if r.reconcileSecret(instance, reqLogger) != nil {
+	err = r.reconcileSecret(instance, reqLogger)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	if r.reconcileDeployment(instance, reqLogger) != nil {
+	err = r.reconcileDeployment(instance, hash, reqLogger)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	if r.reconcileService(instance, reqLogger) != nil {
+	err = r.reconcileService(instance, reqLogger)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileOutgoingPortal) reconcileConfigMap(instance *tesseractv1alpha1.OutgoingPortal, reqLogger logr.Logger) error {
-	configmap := r.newConfigMapForCR(instance)
+func (r *ReconcileOutgoingPortal) reconcileConfigMap(instance *tesseractv1alpha1.OutgoingPortal, reqLogger logr.Logger) (string, error) {
+	configmap, err := r.newConfigMapForCR(instance)
+	if err != nil {
+		return "", err
+	}
+	sha, err := util.JsonShaObject(configmap)
+	if err != nil {
+		return "", err
+	}
 
 	// Set OutgoingPortal instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, configmap, r.scheme); err != nil {
-		return err
+		return "", err
 	}
 
 	// Check if this ConfigMap already exists
 	found := &corev1.ConfigMap{}
-	err := r.client.Get(context.TODO(), types.NamespacedName{Name: configmap.Name, Namespace: configmap.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new ConfigMap", "ConfigMap.Namespace", configmap.Namespace, "ConfigMap.Name", configmap.Name)
-		err = r.client.Create(context.TODO(), configmap)
-		if err != nil {
-			return err
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: configmap.Name, Namespace: configmap.Namespace}, found)
+	if err != nil {
+
+		if errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new ConfigMap", "ConfigMap.Namespace", configmap.Namespace, "ConfigMap.Name", configmap.Name)
+			err = r.client.Create(context.TODO(), configmap)
+			if err != nil {
+				return "", err
+			}
+			// ConfigMap created successfully - don't requeue
+			return sha, nil
 		}
-		// ConfigMap created successfully - don't requeue
-		return nil
-	} else if err != nil {
-		return err
+
+		return "", err
 	}
 
-	// ConfigMap already exists - don't requeue
-	reqLogger.Info("Skip reconcile: ConfigMap already exists", "ConfigMap.Namespace", found.Namespace, "ConfigMap.Name", found.Name)
-	return nil
+	err = r.client.Update(context.TODO(), configmap)
+	if err != nil {
+		return "", err
+	}
+
+	reqLogger.Info("reconcile: updating existing ConfigMap", "ConfigMap.Namespace", found.Namespace, "ConfigMap.Name", found.Name)
+	return sha, nil
 }
 
 func (r *ReconcileOutgoingPortal) reconcileSecret(instance *tesseractv1alpha1.OutgoingPortal, reqLogger logr.Logger) error {
@@ -184,25 +196,32 @@ func (r *ReconcileOutgoingPortal) reconcileSecret(instance *tesseractv1alpha1.Ou
 	// Check if this Secret already exists
 	found := &corev1.Secret{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
-		err = r.client.Create(context.TODO(), secret)
-		if err != nil {
+	if err != nil {
+		if errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+			err = r.client.Create(context.TODO(), secret)
+			if err != nil {
+				return err
+			}
+			// Secret created successfully - don't requeue
+			return nil
+
+		} else {
 			return err
 		}
-		// Secret created successfully - don't requeue
-		return nil
-	} else if err != nil {
-		return err
 	}
 
-	// Secret already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Secret already exists", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
+	// err = r.client.Update(context.TODO(), secret)
+	// if err != nil {
+	// 	return err
+	// }
+
+	reqLogger.Info("reconcile: updating existing Secret", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
 	return nil
 }
 
-func (r *ReconcileOutgoingPortal) reconcileDeployment(instance *tesseractv1alpha1.OutgoingPortal, reqLogger logr.Logger) error {
-	deployment := newDeploymentForCR(instance)
+func (r *ReconcileOutgoingPortal) reconcileDeployment(instance *tesseractv1alpha1.OutgoingPortal, hash string, reqLogger logr.Logger) error {
+	deployment := newDeploymentForCR(instance, hash)
 
 	// Set OutgoingPortal instance as the owner and controller
 	if err := controllerutil.SetControllerReference(instance, deployment, r.scheme); err != nil {
@@ -212,20 +231,31 @@ func (r *ReconcileOutgoingPortal) reconcileDeployment(instance *tesseractv1alpha
 	// Check if this Deployment already exists
 	found := &appsv1.Deployment{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
-		err = r.client.Create(context.TODO(), deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+			err = r.client.Create(context.TODO(), deployment)
+			if err != nil {
+				return err
+			}
+			// Deployment created successfully - don't requeue
+			return nil
+
+		} else {
+			return err
+		}
+	}
+
+	if found.Annotations["config"] != hash {
+		err = r.client.Update(context.TODO(), deployment)
 		if err != nil {
 			return err
 		}
-		// Deployment created successfully - don't requeue
-		return nil
-	} else if err != nil {
-		return err
+		reqLogger.Info("reconcile: updating existing Deployment", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
+	} else {
+		reqLogger.Info("reconcile: Skipping existing Deployment", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 	}
 
-	// Deployment already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Deployment already exists", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 	return nil
 }
 
@@ -240,19 +270,26 @@ func (r *ReconcileOutgoingPortal) reconcileService(instance *tesseractv1alpha1.O
 	// Check if this Service already exists
 	found := &corev1.Service{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-		err = r.client.Create(context.TODO(), service)
-		if err != nil {
+	if err != nil {
+		if errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+			err = r.client.Create(context.TODO(), service)
+			if err != nil {
+				return err
+			}
+			// Service created successfully - don't requeue
+			return nil
+
+		} else {
 			return err
 		}
-		// Service created successfully - don't requeue
-		return nil
-	} else if err != nil {
-		return err
 	}
 
-	// Service already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Service already exists", "Service.Namespace", found.Namespace, "Service.Name", found.Name)
+	// err = r.client.Update(context.TODO(), service)
+	// if err != nil {
+	// 	return err
+	// }
+
+	reqLogger.Info("reconcile: Skip existing Service", "Service.Namespace", found.Namespace, "Service.Name", found.Name)
 	return nil
 }

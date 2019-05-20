@@ -1,6 +1,8 @@
 package outgoingportal
 
 import (
+	"fmt"
+
 	tesseractv1alpha1 "github.com/dirty49374/tesseract-operator/pkg/apis/tesseract/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -8,9 +10,9 @@ import (
 
 func newServiceForCR(cr *tesseractv1alpha1.OutgoingPortal) *corev1.Service {
 	ports := make([]corev1.ServicePort, 0)
-	for _, port := range cr.Spec.RemotePorts {
+	for index, port := range cr.Spec.RemotePorts {
 		ports = append(ports, corev1.ServicePort{
-			Name:     cr.Name,
+			Name:     fmt.Sprintf("port-%d", index),
 			Protocol: corev1.ProtocolTCP,
 			Port:     port,
 		})
