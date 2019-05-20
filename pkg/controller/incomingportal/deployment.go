@@ -66,7 +66,7 @@ func newDeployment(hash string) *appsv1.Deployment {
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "tesseract",
+										Name: "config",
 									},
 								},
 							},
@@ -75,7 +75,7 @@ func newDeployment(hash string) *appsv1.Deployment {
 							Name: "secret",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: "tesseract",
+									SecretName: "secret",
 								},
 							},
 						},
