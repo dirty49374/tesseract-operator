@@ -50,11 +50,11 @@ func newDeployment(hash string) *appsv1.Deployment {
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "config",
+									Name:      "tesseract-config",
 									MountPath: "/config",
 								},
 								{
-									Name:      "secret",
+									Name:      "tesseract-secret",
 									MountPath: "/secret",
 								},
 							},
@@ -62,20 +62,20 @@ func newDeployment(hash string) *appsv1.Deployment {
 					},
 					Volumes: []corev1.Volume{
 						{
-							Name: "config",
+							Name: "tesseract-config",
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "config",
+										Name: "tesseract-config",
 									},
 								},
 							},
 						},
 						{
-							Name: "secret",
+							Name: "tesseract-secret",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: "secret",
+									SecretName: "tesseract-secret",
 								},
 							},
 						},

@@ -21,7 +21,7 @@ func (r *ReconcileIncomingPortal) newConfigMapForCR() (*corev1.ConfigMap, error)
 	yaml := buf.String()
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "configmap",
+			Name:      "tesseract-config",
 			Namespace: tesseractNamespace,
 		},
 		Data: map[string]string{
