@@ -30,10 +30,10 @@ func (r *ReconcileOutgoingPortal) newConfigMapForCR(cr *tesseractv1alpha1.Outgoi
 	yaml := buf.String()
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-portal",
+			Name:      cr.Name + "-outgoing-portal",
 			Namespace: cr.Namespace,
 			Labels: map[string]string{
-				"app":      cr.Name + "-portal",
+				"app":      cr.Name + "-outgoing-portal",
 				"heritage": "tesseract",
 			},
 		},

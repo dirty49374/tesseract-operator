@@ -14,10 +14,10 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-portal",
+			Name:      cr.Name + "-outgoing-portal",
 			Namespace: cr.Namespace,
 			Labels: map[string]string{
-				"app":      cr.Name + "-portal",
+				"app":      cr.Name + "-outgoing-portal",
 				"heritage": "tesseract",
 			},
 			Annotations: map[string]string{
@@ -28,13 +28,13 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": cr.Name + "-portal",
+					"app": cr.Name + "-outgoing-portal",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app": cr.Name + "-portal",
+						"app": cr.Name + "-outgoing-portal",
 					},
 					Annotations: map[string]string{
 						"config": hash,
@@ -78,7 +78,7 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: cr.Name + "-portal",
+										Name: cr.Name + "-outgoing-portal",
 									},
 								},
 							},
@@ -87,7 +87,7 @@ func newDeploymentForCR(cr *tesseractv1alpha1.OutgoingPortal, hash string) *apps
 							Name: "secret",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: cr.Name + "-portal",
+									SecretName: cr.Name + "-outgoing-portal",
 								},
 							},
 						},

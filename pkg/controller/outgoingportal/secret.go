@@ -10,10 +10,10 @@ import (
 func newSecretForCR(cr *tesseractv1alpha1.OutgoingPortal, certs *certs.Certs) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-portal",
+			Name:      cr.Name + "-outgoing-portal",
 			Namespace: cr.Namespace,
 			Labels: map[string]string{
-				"app":      cr.Name + "-portal",
+				"app":      cr.Name + "-outgoing-portal",
 				"heritage": "tesseract",
 			},
 		},

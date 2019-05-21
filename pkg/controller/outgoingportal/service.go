@@ -23,14 +23,14 @@ func newServiceForCR(cr *tesseractv1alpha1.OutgoingPortal) *corev1.Service {
 			Name:      cr.Name,
 			Namespace: cr.Namespace,
 			Labels: map[string]string{
-				"app":      cr.Name + "-portal",
+				"app":      cr.Name + "-outgoing-portal",
 				"heritage": "tesseract",
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
 			Selector: map[string]string{
-				"app": cr.Name + "-portal",
+				"app": cr.Name + "-outgoing-portal",
 			},
 			Ports: ports,
 		},
