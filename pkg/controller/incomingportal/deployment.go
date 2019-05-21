@@ -47,6 +47,8 @@ func newDeployment(hash string) *appsv1.Deployment {
 								"/usr/local/bin/envoy",
 								"-c",
 								"/config/envoy.yaml",
+								"--log-level",
+								"debug",
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
